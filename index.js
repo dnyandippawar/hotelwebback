@@ -4,6 +4,7 @@ const express = require('express');
 const nodemailer = require("nodemailer");
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
+const multer = require('multer');
 const app = express();
 
 const PORT = process.env.PORT || 3000; // Default to port 3000 if PORT is not specified in .env
@@ -18,11 +19,29 @@ app.use(bodyParser.json());
 //   methods: ['GET', 'POST', 'PUT', 'DELETE'],
 //   allowedHeaders: ['Content-Type', 'Authorization']
 // }));
+//******************************************************************************************************************************************************* */
+app.use(express.urlencoded({ extended: true }));
 
+// Multer setup for saving uploaded files to an 'uploads/' directory
+
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, './uploads/');
+    },
+    filename: function (req, file, cb) {
+        cb(null, Date.now() + '-' + file.originalname);
+    }
+});
+const upload = multer({ storage: storage });
+
+
+app.use('/uploads', express.static('uploads'));
+
+//***************************************************************************************************************************************************** */
 
 const cors = require('cors');
 
-const allowedOrigins = ['http://localhost:4200', 'http://localhost:56653'];
+const allowedOrigins = ['http://localhost:4200', 'http://localhost:49934'];
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -84,6 +103,7 @@ app.post("/verifyotp", (req, res) => {
 });
 
 //********************************************************************************************************************************* */
+let currentemail;
 // Email send to database to reset password
 app.post("/email", (req, res) => {
   const email = req.body;
@@ -93,9 +113,9 @@ app.post("/email", (req, res) => {
 
   let transporter = nodemailer.createTransport({
   //  host: "smtp.gmail.com",
-    host: "localhost",
-    port: 587,
-    secure: false,
+    // host: "localhost",
+    // port: 587,
+    // secure: false,
     service: "gmail.com",
     auth: {
       user:'dnyanadip1234@gmail.com',
@@ -116,6 +136,7 @@ app.post("/email", (req, res) => {
   transporter.sendMail(info, (err, result) => {
     if (err) {
       console.log("Error occurred while sending the email:", err);
+      alert("You entered OTP is wrong please enter right OTP .");
       res.status(500).json({ message: "Error occurred while sending the email." });
     } else {
       console.log("Message sent:", result);
@@ -123,15 +144,17 @@ app.post("/email", (req, res) => {
       transporter.close();
     }
   });
-
+this.currentemail = email.email;
   console.log('Received data from Angular: ' + email.email);
 });
+
 //----------------------------------------------------------------------------------------------------------------------------*
 // New password save to the database
 
 app.post("/newpass", (req, res) => {
-    const newpassword = req.body.newpassword;
-    const userEmail = req.body.email; // Get the email from the request body
+  const newPasswordObj = req.body;
+  const newpassword = newPasswordObj.newpassward; // Extracting the actual password string
+  const userEmail = this.currentemail; // Get the email from the request body
 console.log("email ->",userEmail  ,"+",newpassword);
     // Check if password and email are provided
     if (!newpassword || !userEmail) {
@@ -150,6 +173,7 @@ console.log("email ->",userEmail  ,"+",newpassword);
         con.query(sql, [hashedPassword, userEmail], (err, result) => {
             if (err) {
                 console.error('Error updating password:', err);
+                alert("failed update passward re-try");
                 return res.status(500).json({ message: 'Failed to update password.' });
             }
             
@@ -163,21 +187,28 @@ console.log("email ->",userEmail  ,"+",newpassword);
 //******************************************************************** */
 // hotel product send with database
  // Add a new product associated with a specific restaurant
-app.post("/postproducts/:restaurant_id", (req, res) => {
+//  app.post("/postproducts/:restaurant_id", upload.single('productimage'), (req, res) => {
+  app.post("/postproducts/:restaurant_id", (req, res) => {
+  console.log("Received request for:", req.params.restaurant_id);
+  console.log("Request body:", req.body);
+  // if (!req.file) {
+  //     return res.status(400).send('No file uploaded');
+  // }
+
   const restaurant_id = req.params.restaurant_id;
   const productpost = req.body;
   productpost.restaurant_id = restaurant_id;
+  // productpost.productimage = req.file.path;
 
   con.query('INSERT INTO products SET ?', productpost, (error, result) => {
-    if (error) {
-      console.error("Error inserting product:", error);
-      res.status(500).json({ error: "Error saving product" });
-    } else {
-      res.status(200).json({ message: "Product saved successfully", result: result });
-    }
+      if (error) {
+          console.error("Error inserting product:", error);
+          res.status(500).json({ error: "Error saving product" });
+      } else {
+          res.status(200).json({ message: "Product saved successfully", result: result });
+      }
   });
 });
-
 
  //********************************************************************* */
  //-------------------------------------------------------------------------------*
@@ -267,16 +298,23 @@ app.delete('/deleteProduct/:id', (req, res) => {
   con.query('DELETE FROM products WHERE product_id = ?', productId, (error, result) => {
     if (error) {
       console.log("Error deleting product:", error);
-      res.status(500).json({ error: 'Internal server error' });
-    } else {
-      if (result.affectedRows > 0) {
-        res.json({ message: 'Product deleted successfully' });
-      } else {
-        res.status(404).json({ error: 'Product not found' });
+
+      // Check for foreign key constraint error
+      if (error.code === 'ER_ROW_IS_REFERENCED_2') {
+        return res.status(400).json({ error: 'Product cannot be deleted because it is referenced in other records.' });
       }
+
+      return res.status(500).json({ error: 'Internal server error' });
+    } 
+
+    if (result.affectedRows > 0) {
+      return res.json({ message: 'Product deleted successfully' });
+    } else {
+      return res.status(404).json({ error: 'Product not found' });
     }
   });
 });
+
 
 //--*********************************************************************************************************
 
@@ -390,75 +428,188 @@ con.query( 'UPDATE hotelinfo SET ? WHERE restaurant_id = ?',
     }
   );
 });
-//-------------------------------------------------------------------------------------------------------------------*
-//*********************************************************************** */
-//tableproduct get to database
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------*
+//***************************************************************************************************************************************************************** */
+//tableproduct get to database and see Hotel owner
 
-let tableproduct ;
-app.get("/get_tableproduct",(req, res)=>{
-  con.query('select * from tables',(error, result)=>{
-    if(error){
-      console.log("you get errors please check", error);
-    }else{
-     tableproduct = JSON.stringify(result)
-      res.send(tableproduct);
+app.get("/get_completedorder/:id", (req, res) => {
+  const restaurant_id = req.params.id;
+
+  // Validate restaurant_id if necessary (e.g., check if it's a valid number)
+
+  con.query('SELECT * FROM orders WHERE restaurant_id = ? AND orderstatus = 0', [restaurant_id], (error, result) => {
+    if (error) {
+      console.error("Error fetching orders:", error);
+      return res.status(500).json({ success: false, message: "Unable to fetch orders. Please try again later." });
     }
-  })
- })
- //------------------------------------------------------------------------------------------------------------------------------------------------------------------*
- //customer gives order to shop owner
-// app.post("/post_tableproduct", (req , res)=>{
-// const tableorder = req.body;
-//  tableorder.submission_date = new Date();  // Add current date and time
-// let sql ='INSERT INTO tables SET ?';
-//   con.query(sql, tableorder ,(error, result) => {
-//       if(error){
-//         console.log(tableorder);
-//         console.log("sorry", error);
-//         res.status(500).json({ error: 'An error occurred' }); // response send here
-//       } else { 
-//         res.status(200).json({ message: "registered save successfully", result: result }); // response send here
-//       }
-//   });
-// })
-/////////------------------------------------------------------------------------------------------------------------------------------------------------------------*
-// app.post('/post_tableproduct', (req, res) => {
-//   const customer = req.body.customer;
-//   const cart = req.body.cart;
-//   const table_position = req.body.table_position;
+    
+    res.json( result );
+    
+  });
+});
 
-//   console.log(customer);
-//   console.log(cart);
-//   console.log(table_position);
 
-//   const query1 = 'INSERT INTO customers (customer_name, customer_email, customer_address, customermob_number) VALUES (?, ?, ?, ?)';
- 
+//***************************************************************************************************************************************************************** */
+// get orders product with owner
+app.get("/get_ordersproduct/:id", (req, res) => {
+ const restaurant_id  = req.params.id;
+
+  const query = `
+  SELECT 
+    o.order_id,
+    o.orderstatus,
+    o.quantity,
+    o.submission_date,
+    c.table_number,
+    c.customer_name,
+    c.customermob_number,
+    p.productname,
+    p.productimage,
+    p.productprice,
+    p.catagory
+  FROM orders o
+  JOIN customers c ON o.customer_id = c.customer_id
+  JOIN products p ON o.product_id = p.product_id
+  WHERE o.orderstatus = 1 AND o.restaurant_id = ?
+`;
   
-//   con.query(query1, [customer.customer_name, customer.customer_email, customer.customer_address, customer.customermob_number], (err, result) => {
-//     if (err) throw err;
+  con.query(query, [restaurant_id], (error, result) => {
+    if (error) {
+      console.error("Error fetching owner's orders:", error);
+      return res.status(500).send("Error fetching owner's orders");
+    }
+    res.json(result);
+  });
+});
+//****************************************************************************************************************************************************************** */
+// get orderstatus see with customer current_order
 
-//     const customerId = result.insertId;
+app.get("/get_orderstatuscheck_customer/:id", (req, res) => {
+ const restaurant_id = req.params.id;
 
-//     const query2 = 'INSERT INTO orders (customer_id, product_id, quantity, Owner_id) VALUES (?)';
-//     const orderData = cart.map(item => [customerId, item.product_id, item.quantity, item.Owner_id]);
-//     console.log("Order Data:", orderData);
-//     cart.forEach(item => {
-//       con.query(query2, [orderData], (err) => {
-//         if (err) {
-//           console.error("Error inserting into orders:", err);
-//           res.status(500).json({ success: false, message: 'Error processing your request.' });
-//           return;
-//         }
-//       });
-//     });
+  const query = `
+  SELECT 
+    o.order_id,
+    o.orderstatus,
+    o.quantity,
+    o.total,
+    o.submission_date,
+    c.table_number,
+    c.customer_name,
+    c.customermob_number,
+    p.productname,
+    p.productimage,
+    p.productprice,
+    p.catagory
+  FROM orders o
+  JOIN customers c ON o.customer_id = c.customer_id
+  JOIN products p ON o.product_id = p.product_id
+  WHERE o.orderstatus = 1 AND o.restaurant_id = ?
+`;
+  
+  con.query(query,[restaurant_id], (error, result) => {
+    if (error) {
+      console.error("Error fetching owner's orders:", error);
+      return res.status(500).send("Error fetching owner's orders");
+    }
+    res.json(result);
+  });
+});
+//****************************************************************************************************************************************************************** */
+// get completed orders see with customer
 
-//     res.json({ success: true, message: 'Order placed successfully!' });
-//   });
-// });
 
+app.get("/get_ordercompletestatus_customer/:id", (req, res) => {
+    const restaurant_id = req.params.id;
+  
+    const query = `
+    SELECT 
+      o.order_id,
+      o.orderstatus,
+      o.cancelorder,
+      o.quantity,
+      o.submission_date,
+      o.ordercomplete_date,
+      o.total,
+      c.table_number,
+      c.customer_name,
+      c.customermob_number,
+      p.productname,
+      p.productimage,
+      p.productprice
+    FROM orders o
+    JOIN customers c ON o.customer_id = c.customer_id
+    JOIN products p ON o.product_id = p.product_id
+    WHERE o.orderstatus = 0 AND o.restaurant_id = ?
+  `;
+    
+    con.query(query,[restaurant_id], (error, result) => {
+      if (error) {
+        console.error("Error fetching owner's orders:", error);
+        return res.status(500).send("Error fetching owner's orders");
+      }
+      res.json(result);
+    });
+  });
+ //------------------------------------------------------------------------------------------------------------------------------------------------------------------*
 
+// Soft delete order by updating its status
+app.put('/put_ordersproduct/:order_id', (req, res) => {
+  const productId = req.params.order_id;
+  const element = req.body;
+  console.log(element);
+  const query = 'UPDATE orders SET orderstatus = ?, ordercomplete_date = ? , productname = ? , productprice = ? , productimage = ? , catagory = ? WHERE order_id = ?';
+  ordercomplete_date = new Date();
+  // Assuming orderstatus is a boolean, where true means the order is active and false means it's deleted
+  con.query(query, [false , ordercomplete_date,element.productname,element.productprice, element.productimage , element.catagory, productId], (err, result) => {
+      if (err) {
+          console.error("Error updating order status:", err);
+          return res.status(500).json({ success: false, message: 'Error updating order status' });
+      }
+      res.json({ success: true, message: 'Order soft deleted successfully',result });
+  });
+});
+
+//***************************************************************************************************************************************************************** */
+// cansel order
+app.put('/put_canselorders', (req, res) => {
+  const orderIds = req.body.order_ids;
+  if (!orderIds || !Array.isArray(orderIds)) {
+      return res.status(400).json({ success: false, message: 'Invalid order IDs' });
+  }
+
+  // Use SQL IN clause to update multiple orders at once
+  const query = `UPDATE orders SET orderstatus = ?, cancelorder = ? WHERE order_id IN (?)`;
+  
+  con.query(query, [false, true, orderIds], (err, result) => {
+      if (err) {
+          console.error("Error updating orders:", err);
+          return res.status(500).json({ success: false, message: 'Error updating orders' });
+      }
+      res.json({ success: true, message: 'Orders updated successfully', result });
+  });
+});
+
+//****************************************************************************************************************************************************************** */
+// cancel order by index
+app.put('/api/cancelOrder/:itemId', (req, res) => {
+  const itemId = req.params.itemId;
+  const cancelstatus = req.body.cancelstatus;
+
+  con.query('UPDATE orders SET cancelstatus = ? WHERE order_id = ?', [cancelstatus, itemId], (error, result) => {
+    if (error) {
+      console.error('Error updating cancel status:', error);
+      return res.status(500).send("Error updating cancel status");
+    }
+    res.json({ message: 'Cancel status updated successfully' });
+  });
+});
+
+/////////------------------------------------------------------------------------------------------------------------------------------------------------------------*
+// post order
 app.post('/post_tableproduct', (req, res) => {
   const customer = req.body.customer;
+   // Add current date and time
   let cart;
   let rawCartString = req.body.cart[0];
   
@@ -475,19 +626,18 @@ app.post('/post_tableproduct', (req, res) => {
   }
   
 
-  const table_position = req.body.table_position;
+  // const table_position = req.body.table_position;
 
   console.log(customer);
   console.log(cart);
-  console.log(table_position);
 
-  const query1 = 'INSERT INTO customers (customer_name, customer_email, customer_address, customermob_number) VALUES (?, ?, ?, ?)';
+  const query1 = 'INSERT INTO customers (customer_name, customer_email, customer_address, customermob_number , table_number) VALUES (?, ?, ?, ?,?)';
 
-  con.query(query1, [customer.customer_name, customer.customer_email, customer.customer_address, customer.customermob_number], (err, result) => {
+  con.query(query1, [customer.customer_name, customer.customer_email, customer.customer_address, customer.customermob_number , customer.table_number ], (err, result) => {
       if (err) throw err;
 
       const customerId = result.insertId;
-      const query2 = 'INSERT INTO orders (customer_id, product_id, quantity, restaurant_id) VALUES (?, ?, ?, ?)';
+      const query2 = 'INSERT INTO orders (customer_id, product_id, quantity, restaurant_id, orderstatus, submission_date, total) VALUES (?, ?, ?, ? ,? ,? ,?)';
       
       cart.forEach(itemString => {
           let item;
@@ -500,10 +650,10 @@ app.post('/post_tableproduct', (req, res) => {
         } else {
             item = itemString;
         }
-        
+        submission_date = new Date(); 
 
           if (item && "product_id" in item && "quantity" in item && "restaurant_id" in item ) {
-              con.query(query2, [customerId, item.product_id, item.quantity, item.restaurant_id], (err) => {
+              con.query(query2, [customerId, item.product_id, item.quantity, item.restaurant_id , true ,submission_date , item.total], (err) => {
                   if (err) {
                       console.error("Error inserting into orders:", err);
                       res.status(500).json({ success: false, message: 'Error processing your request.' });
@@ -519,11 +669,104 @@ app.post('/post_tableproduct', (req, res) => {
   });
 });
 
+//**************************************************************************************************************************************************************** */
+// week wise earning
 
 
 
+app.get("/weeklyearnings/:ownerId", (req, res) => {
+  const ownerId = req.params.ownerId;
+  const commissionRate = 0.02; // 2%
+  const GST = 0.18; // 18%
 
-//******///******************************************************************************************************** */ */
+  // SQL query to get daily earnings for the last 2 weeks
+  const query = `
+  SELECT 
+  DATE(ordercomplete_date) as date, 
+  SUM(total) as total 
+FROM orders o 
+JOIN hotelinfo r ON o.restaurant_id = r.restaurant_id 
+WHERE r.Owner_id = ? AND o.orderstatus = 0 AND o.cancelorder IS NULL AND ordercomplete_date >= NOW() - INTERVAL 2 WEEK 
+GROUP BY DATE(ordercomplete_date)
+
+UNION ALL
+
+SELECT 
+  'WEEKLY TOTAL' as date, 
+  SUM(total) as total 
+FROM orders o 
+JOIN hotelinfo r ON o.restaurant_id = r.restaurant_id 
+WHERE r.Owner_id = ? AND o.orderstatus = 0 AND o.cancelorder IS NULL AND ordercomplete_date >= NOW() - INTERVAL 2 WEEK AND ordercomplete_date < NOW() - INTERVAL 1 WEEK
+
+UNION ALL
+
+SELECT 
+  'WEEKLY TOTAL CURRENT WEEK' as date, 
+  SUM(total) as total 
+FROM orders o 
+JOIN hotelinfo r ON o.restaurant_id = r.restaurant_id 
+WHERE r.Owner_id = ? AND o.orderstatus = 0 AND o.cancelorder IS NULL AND ordercomplete_date >= NOW() - INTERVAL 1 WEEK;
+
+  `;
+
+  con.query(query, [ownerId, ownerId, ownerId], (error, results) => {
+    if (error) {
+      console.error("Error with SQL Query: ", error);  
+      return res.status(500).json({ error: 'Error querying the database', details: error });
+    }
+
+    if (!results.length) {
+      return res.status(404).json({ message: 'No earnings data found for the past week.' });
+    }
+
+    const earningsWithCommissionAndGST = results.map(record => {
+      const total = record.total;
+      const commission = total * commissionRate;
+      const amountAfterCommission = total - commission;
+      const gstAmount = amountAfterCommission * GST;
+      const netAmount = amountAfterCommission - gstAmount;
+
+      return {
+        date: record.date,
+        total,
+        commission,
+        gstAmount,
+        netAmount
+      };
+    });
+
+    // Sort by date in descending order
+    earningsWithCommissionAndGST.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    console.log(earningsWithCommissionAndGST);
+    res.status(200).json(earningsWithCommissionAndGST);
+  });
+});
+
+//***************************************************************************************************************************************************************** */
+
+app.get("/ordersForDay/:ownerId/:date", (req, res) => {
+  const ownerId = req.params.ownerId;
+  const date = req.params.date;
+
+  const query = `
+    SELECT * 
+    FROM orders o 
+    JOIN hotelinfo r ON o.restaurant_id = r.restaurant_id 
+    WHERE r.Owner_id = ? AND DATE(ordercomplete_date) = ? AND o.orderstatus = 0 AND o.cancelorder IS NULL
+  `;
+
+  con.query(query, [ownerId, date], (error, results) => {
+    if (error) {
+      return res.status(500).json({ error: 'Error querying the database', details: error });
+    }
+
+    res.status(200).json(results);
+  });
+});
+
+
+//******///***************************************************************************************************************************************************** */ */
 
 
 app.post("/login", (req, res) => {
