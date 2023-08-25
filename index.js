@@ -6,6 +6,9 @@ const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const multer = require('multer');
 const app = express();
+const cookieParser = require('cookie-parser');
+app.use(cookieParser());
+
 
 const PORT = process.env.PORT || 3000; // Default to port 3000 if PORT is not specified in .env
 app.use(express.json());
@@ -41,7 +44,7 @@ app.use('/uploads', express.static('uploads'));
 
 const cors = require('cors');
 
-const allowedOrigins = ['http://localhost:4200', 'http://localhost:49934'];
+const allowedOrigins = ['http://localhost:4200', 'http://localhost:56957'];
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -437,7 +440,10 @@ app.get("/get_completedorder/:id", (req, res) => {
 
   // Validate restaurant_id if necessary (e.g., check if it's a valid number)
 
-  con.query('SELECT * FROM orders WHERE restaurant_id = ? AND orderstatus = 0', [restaurant_id], (error, result) => {
+  con.query(`SELECT c.*, o.* 
+  FROM order_items o
+  JOIN customers c ON o.order_id = c.order_id 
+  WHERE o.orderstatus = 0 AND o.restaurant_id = ?`, [restaurant_id], (error, result) => {
     if (error) {
       console.error("Error fetching orders:", error);
       return res.status(500).json({ success: false, message: "Unable to fetch orders. Please try again later." });
@@ -447,33 +453,35 @@ app.get("/get_completedorder/:id", (req, res) => {
     
   });
 });
-
-
+//***************************************************************************************************************************************************************** */
+// get orders product with owner
+app.get("/get_ordersproductbyid/:id", (req, res) => {
+  const restaurant_id  = req.params.id;
+ 
+   const query = `SELECT * from order_items
+   WHERE  orderstatus = 1 AND cancelorder = 0 AND restaurant_id = ?`
+ ; 
+   
+   con.query(query , [restaurant_id], (error, result) => {
+     if (error) {
+       console.error("Error fetching owner's orders:", error);
+       return res.status(500).send("Error fetching owner's orders");
+     }
+     res.json(result);
+   });
+ });
 //***************************************************************************************************************************************************************** */
 // get orders product with owner
 app.get("/get_ordersproduct/:id", (req, res) => {
  const restaurant_id  = req.params.id;
 
-  const query = `
-  SELECT 
-    o.order_id,
-    o.orderstatus,
-    o.quantity,
-    o.submission_date,
-    c.table_number,
-    c.customer_name,
-    c.customermob_number,
-    p.productname,
-    p.productimage,
-    p.productprice,
-    p.catagory
-  FROM orders o
-  JOIN customers c ON o.customer_id = c.customer_id
-  JOIN products p ON o.product_id = p.product_id
-  WHERE o.orderstatus = 1 AND o.restaurant_id = ?
-`;
+  const query = `SELECT c.*, o.* 
+  FROM order_items o
+  JOIN customers c ON o.order_id = c.order_id 
+  WHERE  o.orderstatus = 1 AND o.cancelorder = 0 AND o.restaurant_id = ?`
+;
   
-  con.query(query, [restaurant_id], (error, result) => {
+  con.query(query , [restaurant_id], (error, result) => {
     if (error) {
       console.error("Error fetching owner's orders:", error);
       return res.status(500).send("Error fetching owner's orders");
@@ -481,29 +489,16 @@ app.get("/get_ordersproduct/:id", (req, res) => {
     res.json(result);
   });
 });
+
 //****************************************************************************************************************************************************************** */
 // get orderstatus see with customer current_order
 
 app.get("/get_orderstatuscheck_customer/:id", (req, res) => {
  const restaurant_id = req.params.id;
 
-  const query = `
-  SELECT 
-    o.order_id,
-    o.orderstatus,
-    o.quantity,
-    o.total,
-    o.submission_date,
-    c.table_number,
-    c.customer_name,
-    c.customermob_number,
-    p.productname,
-    p.productimage,
-    p.productprice,
-    p.catagory
-  FROM orders o
-  JOIN customers c ON o.customer_id = c.customer_id
-  JOIN products p ON o.product_id = p.product_id
+  const query = `SELECT c.*, o.* 
+  FROM order_items o
+  JOIN customers c ON o.order_id = c.order_id 
   WHERE o.orderstatus = 1 AND o.restaurant_id = ?
 `;
   
@@ -522,25 +517,10 @@ app.get("/get_orderstatuscheck_customer/:id", (req, res) => {
 app.get("/get_ordercompletestatus_customer/:id", (req, res) => {
     const restaurant_id = req.params.id;
   
-    const query = `
-    SELECT 
-      o.order_id,
-      o.orderstatus,
-      o.cancelorder,
-      o.quantity,
-      o.submission_date,
-      o.ordercomplete_date,
-      o.total,
-      c.table_number,
-      c.customer_name,
-      c.customermob_number,
-      p.productname,
-      p.productimage,
-      p.productprice
-    FROM orders o
-    JOIN customers c ON o.customer_id = c.customer_id
-    JOIN products p ON o.product_id = p.product_id
-    WHERE o.orderstatus = 0 AND o.restaurant_id = ?
+    const query = `SELECT c.*, o.* 
+    FROM order_items o
+    JOIN customers c ON o.order_id = c.order_id 
+    WHERE  o.orderstatus = 0 AND  o.restaurant_id = ?
   `;
     
     con.query(query,[restaurant_id], (error, result) => {
@@ -558,10 +538,10 @@ app.put('/put_ordersproduct/:order_id', (req, res) => {
   const productId = req.params.order_id;
   const element = req.body;
   console.log(element);
-  const query = 'UPDATE orders SET orderstatus = ?, ordercomplete_date = ? , productname = ? , productprice = ? , productimage = ? , catagory = ? WHERE order_id = ?';
+  const query = 'UPDATE order_items SET orderstatus = ?, ordercomplete_date = ?  WHERE order_id = ?';
   ordercomplete_date = new Date();
   // Assuming orderstatus is a boolean, where true means the order is active and false means it's deleted
-  con.query(query, [false , ordercomplete_date,element.productname,element.productprice, element.productimage , element.catagory, productId], (err, result) => {
+  con.query(query, [false , ordercomplete_date, productId], (err, result) => {
       if (err) {
           console.error("Error updating order status:", err);
           return res.status(500).json({ success: false, message: 'Error updating order status' });
@@ -569,6 +549,26 @@ app.put('/put_ordersproduct/:order_id', (req, res) => {
       res.json({ success: true, message: 'Order soft deleted successfully',result });
   });
 });
+//****************************************************************************************************************************************************************** */
+
+app.put('/put_ordersproductbyproductid/:order_id', (req, res) => {
+  const productId = req.params.order_id;
+  const element = req.body;
+  console.log(element);
+  console.log( "id :",productId);
+  const query = 'UPDATE order_items SET orderstatus = ?, ordercomplete_date = ?  WHERE item_id = ?';
+  ordercomplete_date = new Date();
+  // Assuming orderstatus is a boolean, where true means the order is active and false means it's deleted
+  con.query(query, [false , ordercomplete_date, productId], (err, result) => {
+      if (err) {
+          console.error("Error updating order status:", err);
+          return res.status(500).json({ success: false, message: 'Error updating order status' });
+      }
+      res.json({ success: true, message: 'Order soft deleted successfully',result });
+  });
+});
+
+
 
 //***************************************************************************************************************************************************************** */
 // cansel order
@@ -579,7 +579,7 @@ app.put('/put_canselorders', (req, res) => {
   }
 
   // Use SQL IN clause to update multiple orders at once
-  const query = `UPDATE orders SET orderstatus = ?, cancelorder = ? WHERE order_id IN (?)`;
+  const query = `UPDATE order_items SET orderstatus = ?, cancelorder = ? WHERE order_id IN (?)`;
   
   con.query(query, [false, true, orderIds], (err, result) => {
       if (err) {
@@ -592,11 +592,11 @@ app.put('/put_canselorders', (req, res) => {
 
 //****************************************************************************************************************************************************************** */
 // cancel order by index
-app.put('/api/cancelOrder/:itemId', (req, res) => {
+app.put('/cancelOrder/:itemId', (req, res) => {
   const itemId = req.params.itemId;
-  const cancelstatus = req.body.cancelstatus;
+  const cancelorderitem = req.body.cancelstatus;
 
-  con.query('UPDATE orders SET cancelstatus = ? WHERE order_id = ?', [cancelstatus, itemId], (error, result) => {
+  con.query('UPDATE order_items SET cancelorder = ? WHERE order_id = ?', [cancelorderitem, itemId], (error, result) => {
     if (error) {
       console.error('Error updating cancel status:', error);
       return res.status(500).send("Error updating cancel status");
@@ -606,67 +606,81 @@ app.put('/api/cancelOrder/:itemId', (req, res) => {
 });
 
 /////////------------------------------------------------------------------------------------------------------------------------------------------------------------*
-// post order
+
+//************************************************************************************************************************************************************ */
 app.post('/post_tableproduct', (req, res) => {
-  const customer = req.body.customer;
-   // Add current date and time
-  let cart;
+  // Extracting customer data
+  const customerData = req.body.customer;
+
+  // Parsing cart data
+  let cartItems;
   let rawCartString = req.body.cart[0];
-  
+
   // Clean the string
   let lastIndex = rawCartString.lastIndexOf(']') + 1;
   let validCartString = rawCartString.slice(0, lastIndex);
-  
+
   try {
-      cart = JSON.parse(validCartString);
+      cartItems = JSON.parse(validCartString);
   } catch (error) {
       console.error("Error parsing cart JSON:", error);
-      res.status(500).json({ success: false, message: 'Invalid cart format.' });
-      return;
+      return res.status(500).json({ success: false, message: 'Invalid cart format.' });
   }
-  
 
-  // const table_position = req.body.table_position;
-
-  console.log(customer);
-  console.log(cart);
-
-  const query1 = 'INSERT INTO customers (customer_name, customer_email, customer_address, customermob_number , table_number) VALUES (?, ?, ?, ?,?)';
-
-  con.query(query1, [customer.customer_name, customer.customer_email, customer.customer_address, customer.customermob_number , customer.table_number ], (err, result) => {
-      if (err) throw err;
-
-      const customerId = result.insertId;
-      const query2 = 'INSERT INTO orders (customer_id, product_id, quantity, restaurant_id, orderstatus, submission_date, total) VALUES (?, ?, ?, ? ,? ,? ,?)';
-      
-      cart.forEach(itemString => {
-          let item;
-
-          // If the item is a string, parse it
-          if (typeof itemString === "string") {
-            // Remove the number at the end to ensure it's a valid JSON string
-            const validJsonString = itemString.split(']')[0] + ']';
-            item = JSON.parse(validJsonString);
-        } else {
-            item = itemString;
-        }
-        submission_date = new Date(); 
-
-          if (item && "product_id" in item && "quantity" in item && "restaurant_id" in item ) {
-              con.query(query2, [customerId, item.product_id, item.quantity, item.restaurant_id , true ,submission_date , item.total], (err) => {
-                  if (err) {
-                      console.error("Error inserting into orders:", err);
-                      res.status(500).json({ success: false, message: 'Error processing your request.' });
-                      return;
-                  }
-              });
-          } else {
-              console.error("Missing properties in cart item:", item);
+  // Save order to `orders` table
+  con.query(
+      'INSERT INTO customers (customer_name, customer_email, customer_address, customer_mobile_number, table_number, total_amount) VALUES (?, ?, ?, ?, ?, ?)',
+      [
+          customerData.customer_name,
+          customerData.customer_email,
+          customerData.customer_address,
+          customerData.customermob_number,
+          customerData.table_number,
+          cartItems.reduce((acc, item) => acc + item.total, 0)
+      ],
+      (err, orderResults) => {
+          if (err) {
+              console.error("An error occurred:", err);
+              return res.status(500).send({ success: false, message: err.message });
           }
-      });
 
-      res.json({ success: true, message: 'Order placed successfully!' });
-  });
+          const orderId = orderResults.insertId;
+
+          // Using a counter to keep track of finished queries
+          let completedQueries = 0;
+
+          cartItems.forEach(item => {
+              con.query(
+                  'INSERT INTO order_items (order_id, product_id, restaurant_id, productname, productprice, productimage, description, catagory, quantity, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                  [
+                      orderId,
+                      item.product_id,
+                      item.restaurant_id,
+                      item.productname,
+                      item.productprice,
+                      item.productimage,
+                      item.description,
+                      item.catagory,
+                      item.quantity,
+                      item.total
+                  ],
+                  err => {
+                      completedQueries++;
+
+                      if (err) {
+                          console.error("Error inserting item:", err);
+                          return res.status(500).send({ success: false, message: err.message });
+                      }
+
+                      // If all items have been processed, send response
+                      if (completedQueries === cartItems.length) {
+                          res.status(200).send({ success: true, message: "Order saved successfully!", orderId: orderId });
+                      }
+                  }
+              );
+          });
+      }
+  );
 });
 
 //**************************************************************************************************************************************************************** */
@@ -684,9 +698,8 @@ app.get("/weeklyearnings/:ownerId", (req, res) => {
   SELECT 
   DATE(ordercomplete_date) as date, 
   SUM(total) as total 
-FROM orders o 
-JOIN hotelinfo r ON o.restaurant_id = r.restaurant_id 
-WHERE r.Owner_id = ? AND o.orderstatus = 0 AND o.cancelorder IS NULL AND ordercomplete_date >= NOW() - INTERVAL 2 WEEK 
+FROM order_items 
+WHERE Owner_id = ? AND orderstatus = 0 AND cancelorder = 0 AND ordercomplete_date >= NOW() - INTERVAL 2 WEEK 
 GROUP BY DATE(ordercomplete_date)
 
 UNION ALL
@@ -694,18 +707,16 @@ UNION ALL
 SELECT 
   'WEEKLY TOTAL' as date, 
   SUM(total) as total 
-FROM orders o 
-JOIN hotelinfo r ON o.restaurant_id = r.restaurant_id 
-WHERE r.Owner_id = ? AND o.orderstatus = 0 AND o.cancelorder IS NULL AND ordercomplete_date >= NOW() - INTERVAL 2 WEEK AND ordercomplete_date < NOW() - INTERVAL 1 WEEK
+FROM order_items 
+WHERE Owner_id = ? AND orderstatus = 0 AND cancelorder = 0 AND ordercomplete_date >= NOW() - INTERVAL 2 WEEK AND ordercomplete_date < NOW() - INTERVAL 1 WEEK
 
 UNION ALL
 
 SELECT 
   'WEEKLY TOTAL CURRENT WEEK' as date, 
   SUM(total) as total 
-FROM orders o 
-JOIN hotelinfo r ON o.restaurant_id = r.restaurant_id 
-WHERE r.Owner_id = ? AND o.orderstatus = 0 AND o.cancelorder IS NULL AND ordercomplete_date >= NOW() - INTERVAL 1 WEEK;
+FROM order_items 
+WHERE Owner_id = ? AND orderstatus = 0 AND cancelorder = 0 AND ordercomplete_date >= NOW() - INTERVAL 1 WEEK;
 
   `;
 
@@ -751,9 +762,8 @@ app.get("/ordersForDay/:ownerId/:date", (req, res) => {
 
   const query = `
     SELECT * 
-    FROM orders o 
-    JOIN hotelinfo r ON o.restaurant_id = r.restaurant_id 
-    WHERE r.Owner_id = ? AND DATE(ordercomplete_date) = ? AND o.orderstatus = 0 AND o.cancelorder IS NULL
+    FROM order_items 
+    WHERE Owner_id = ? AND DATE(ordercomplete_date) = ? AND orderstatus = 0 AND cancelorder = 0
   `;
 
   con.query(query, [ownerId, date], (error, results) => {
@@ -769,6 +779,10 @@ app.get("/ordersForDay/:ownerId/:date", (req, res) => {
 //******///***************************************************************************************************************************************************** */ */
 
 
+
+
+
+//*--------------------------------------------------------*************************************************************************--------------------*
 app.post("/login", (req, res) => {
   const { Ownername, Ownerpassward } = req.body;
 
@@ -776,8 +790,8 @@ app.post("/login", (req, res) => {
     return res.status(400).json({ message: 'Username and password are required' });
   }
 
-  // Retrieve the hashed password for the given Ownername
   const query = "SELECT * FROM signup WHERE Ownername = ?";
+  
   con.query(query, [Ownername], (err, results) => {
     if (err) {
       return res.status(500).json({ message: 'Error querying the database', error: err });
@@ -789,38 +803,50 @@ app.post("/login", (req, res) => {
 
     const Owner = results[0];
     
-    // Compare the provided password with the stored hashed password
-    bcrypt.compare(Ownerpassward, Owner.Ownerpassward, (bcryptErr, isMatch) => { // Make sure you use the correct column name for the hashed password, I assumed it's "Ownerpassward"
+    bcrypt.compare(Ownerpassward, Owner.Ownerpassward, async (bcryptErr, isMatch) => {
       if (bcryptErr || !isMatch) {
         return res.status(401).json({ message: 'Invalid credentials. Please try again' });
       }
-      return res.status(200).json({ message: 'Login successful', Owner });
+
+      const sessionToken = generateSessionToken();
+      const createdAtDate = new Date();
+      createdAtDate.setDate(createdAtDate.getDate() + 1); // Token expires in 1 day
+      const expirationTime = createdAtDate.toISOString().slice(0, 19).replace('T', ' ');
+
+      const storeTokenQuery = `
+        INSERT INTO user_sessions (user_id, token, expires_at) 
+        VALUES (?, ?, ?);
+      `;
+
+      con.query(storeTokenQuery, [Owner.Owner_id, sessionToken, expirationTime], (tokenError, tokenResult) => {
+        if (tokenError) {
+          console.error("Error storing session token", tokenError);
+          return res.status(500).json({ error: 'An error occurred' });
+        }
+        
+        // Save the sessionToken as HttpOnly cookie and return the response
+        res.cookie('session_token', sessionToken, { httpOnly: true, maxAge: 86400000 });
+        return res.status(200).json({ message: 'Login successful', owner: Owner });
+      });
     });
   });
 });
 
+//********************************************************************-------------------------------------------------------------------------------------- */
+// Helper function to generate a session token
+function generateSessionToken() {
+  // Logic to generate a unique session token
+  // For example: return a random string or use a library like 'crypto'
+  const tokenLength = 32;
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
+  for (let i = 0; i < tokenLength; i++) {
+    token += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return token;
+}
 
-
-
-//*----------------------------------------------------------------------------*
-// app.post("/post", (req, res) => {
-//   // console.log(req.body);
-//   var post_body =  req.body;
-//   post_body.submission_date = new Date();  // Add current date and time
-//   let sql ='INSERT INTO signup SET ?';
-//   con.query(sql, post_body ,(error, result) => {
-//       if(error){
-//         console.log(post_body);
-//         console.log("sorry", error);
-//         res.status(500).json({ error: 'An error occurred' }); // response send here
-//       } else { 
-//         res.status(200).json({ message: "registered save successfully", result: result }); // response send here
-//       }
-//   });
-//   // no need for res.end() her
-//   // res.end();
-// });
-
+//********************************************************************************************************************************************************* */
 // const bcrypt = require('bcrypt');
 const saltRounds = 10;
 
