@@ -7,6 +7,8 @@ const bcrypt = require('bcrypt');
 const multer = require('multer');
 const app = express();
 const cookieParser = require('cookie-parser');
+const fs = require('fs');
+const path = require('path');
 app.use(cookieParser());
 
 
@@ -28,23 +30,28 @@ app.use(express.urlencoded({ extended: true }));
 // Multer setup for saving uploaded files to an 'uploads/' directory
 
 const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, './uploads/');
+    destination: function(req, file, cb) {
+        cb(null, 'D:/New folder/Images'); // this is your desired path
     },
-    filename: function (req, file, cb) {
+    filename: function(req, file, cb) {
         cb(null, Date.now() + '-' + file.originalname);
     }
 });
+
 const upload = multer({ storage: storage });
 
 
 app.use('/uploads', express.static('uploads'));
 
+
+
+
+
 //***************************************************************************************************************************************************** */
 
 const cors = require('cors');
 
-const allowedOrigins = ['http://localhost:4200', 'http://localhost:56957'];
+const allowedOrigins = ['http://localhost:4200', 'http://localhost:49686'];
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -85,16 +92,7 @@ function generateOTP(length) {
 
 }
 
-// app.get("/otpget", (req, res) => {
  
-//     // generatedOtp = generateOTP(6);
-    
-    
-
-//     // Send the OTP as a response
-//     res.json({  generatedOtp });
- 
-// });
 app.post("/verifyotp", (req, res) => {
     const userEnteredOTP = req.body.otp;
     console.log(userEnteredOTP);
@@ -189,29 +187,39 @@ console.log("email ->",userEmail  ,"+",newpassword);
 
 //******************************************************************** */
 // hotel product send with database
- // Add a new product associated with a specific restaurant
-//  app.post("/postproducts/:restaurant_id", upload.single('productimage'), (req, res) => {
-  app.post("/postproducts/:restaurant_id", (req, res) => {
-  console.log("Received request for:", req.params.restaurant_id);
-  console.log("Request body:", req.body);
-  // if (!req.file) {
-  //     return res.status(400).send('No file uploaded');
-  // }
+ // Add a new product associated with a specific restaurantapp.post("/postproducts/:restaurant_id", upload.single('productimage'), (req, res) => {
+  app.post("/postproducts/:restaurant_id", upload.single('productimage'), (req, res) => {
+    console.log("Received request for:", req.params.restaurant_id);
+    console.log("Request body:", req.body);
+    console.log("File info:", req.file);
 
-  const restaurant_id = req.params.restaurant_id;
-  const productpost = req.body;
-  productpost.restaurant_id = restaurant_id;
-  // productpost.productimage = req.file.path;
+    if (!req.file) {
+        return res.status(400).send('No file uploaded');
+    }
 
-  con.query('INSERT INTO products SET ?', productpost, (error, result) => {
-      if (error) {
-          console.error("Error inserting product:", error);
-          res.status(500).json({ error: "Error saving product" });
-      } else {
-          res.status(200).json({ message: "Product saved successfully", result: result });
-      }
-  });
+    const restaurant_id = req.params.restaurant_id;
+    const productpost = req.body;
+    productpost.restaurant_id = restaurant_id;
+    productpost.productimage = req.file.path; // Save the image path to the database
+
+    // Check if the file exists
+    if (fs.existsSync(req.file.path)) {
+        con.query('INSERT INTO products SET ?', productpost, (error, result) => {
+            if (error) {
+                console.error("Error inserting product:", error);
+                res.status(500).json({ error: "Error saving product" });
+            } else {
+                res.status(200).json({ message: "Product saved successfully", result: result });
+            }
+        });
+    } else {
+        console.error("File doesn't exist:", req.file.path);
+        res.status(500).json({ error: "Uploaded file not found on server" });
+    }
 });
+
+
+
 
  //********************************************************************* */
  //-------------------------------------------------------------------------------*
@@ -499,7 +507,7 @@ app.get("/get_orderstatuscheck_customer/:id", (req, res) => {
   const query = `SELECT c.*, o.* 
   FROM order_items o
   JOIN customers c ON o.order_id = c.order_id 
-  WHERE o.orderstatus = 1 AND o.restaurant_id = ?
+  WHERE o.orderstatus = 1 AND  o.cancelorder = 0 AND o.restaurant_id = ?
 `;
   
   con.query(query,[restaurant_id], (error, result) => {
@@ -520,7 +528,7 @@ app.get("/get_ordercompletestatus_customer/:id", (req, res) => {
     const query = `SELECT c.*, o.* 
     FROM order_items o
     JOIN customers c ON o.order_id = c.order_id 
-    WHERE  o.orderstatus = 0 AND  o.restaurant_id = ?
+    WHERE  o.orderstatus = 0 AND o.cancelorder = 0 AND  o.restaurant_id = ?
   `;
     
     con.query(query,[restaurant_id], (error, result) => {
@@ -645,16 +653,17 @@ app.post('/post_tableproduct', (req, res) => {
           }
 
           const orderId = orderResults.insertId;
-
+console.log(cartItems);
           // Using a counter to keep track of finished queries
           let completedQueries = 0;
 
           cartItems.forEach(item => {
               con.query(
-                  'INSERT INTO order_items (order_id, product_id, restaurant_id, productname, productprice, productimage, description, catagory, quantity, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                  'INSERT INTO order_items (order_id, product_id, Owner_id, restaurant_id, productname, productprice, productimage, description, catagory, quantity, total  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?)',
                   [
                       orderId,
                       item.product_id,
+                      item.Owner_id,
                       item.restaurant_id,
                       item.productname,
                       item.productprice,
@@ -662,7 +671,8 @@ app.post('/post_tableproduct', (req, res) => {
                       item.description,
                       item.catagory,
                       item.quantity,
-                      item.total
+                      item.total,
+                      
                   ],
                   err => {
                       completedQueries++;
